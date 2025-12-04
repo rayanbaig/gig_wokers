@@ -351,11 +351,15 @@ const HeroHook = ({ onStart, lang }: { onStart: () => void, lang: Language }) =>
     );
 };
 
-const Scanner = ({ onScanComplete, lang }: { onScanComplete: () => void, lang: Language }) => {
+const Scanner = ({ onScanComplete, lang, audioData, setAudioData }: {
+    onScanComplete: () => void,
+    lang: Language,
+    audioData: Blob | File | null,
+    setAudioData: (data: Blob | File | null) => void
+}) => {
     const t = TRANSLATIONS[lang];
     const [status, setStatus] = useState<ScanStatus>("idle");
     const [progress, setProgress] = useState(0);
-    const [audioData, setAudioData] = useState<Blob | File | null>(null);
     const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -675,13 +679,72 @@ const DigitalPassport = ({ score, lang }: { score: number, lang: Language }) => 
             </div>
 
             {/* Shimmer Effect */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/5 to-transparent skew-x-12 translate-x-[-200%] group-hover:animate-shimmer pointer-events-none" />
         </motion.div>
     );
 };
 
-const Dashboard = ({ result, lang }: { result: AuditResult, lang: Language }) => {
+const Dashboard = ({ result, lang, audioData }: { result: AuditResult, lang: Language, audioData: Blob | File | null }) => {
     const t = TRANSLATIONS[lang];
+    const [isMinting, setIsMinting] = useState(false);
+    const [isMinted, setIsMinted] = useState(false);
+
+    const handleMint = () => {
+        setIsMinting(true);
+
+        // Simulate Blockchain Transaction
+        setTimeout(() => {
+            setIsMinting(false);
+            setIsMinted(true);
+
+            // Audio Evidence Details
+            let audioDetails = "None provided";
+            if (audioData) {
+                const type = 'name' in audioData ? "Uploaded File" : "Live Recording";
+                const name = 'name' in audioData ? audioData.name : "voice_testimony.wav";
+                const size = (audioData.size / 1024).toFixed(2) + " KB";
+                audioDetails = `Type: ${type}\n  Filename: ${name}\n  Size: ${size}\n  Hash: ${Math.random().toString(36).substring(7)} (Simulated)`;
+            }
+
+            // Generate and Download Certificate (Mock PDF)
+            const certificateContent = `
+GIGGUARD DIGITAL RIGHTS CERTIFICATE
+-----------------------------------
+Date: ${new Date().toLocaleString()}
+Rights Score: ${result.rightsScore}/100
+Status: ${result.banStatus.toUpperCase()}
+
+DETECTED VIOLATIONS
+-------------------
+${t.flags.map((flag: string) => `- ${flag}`).join('\n')}
+
+AUDIO EVIDENCE
+--------------
+${audioDetails}
+
+BLOCKCHAIN PROOF
+----------------
+Network: Polygon Mainnet
+Transaction Hash: 0x71C...9A2
+Block Height: 44,021,992
+Smart Contract: 0xGig...Guard
+
+EVIDENCE SUMMARY
+----------------
+This document certifies that the algorithmic audit evidence 
+has been cryptographically secured and timestamped.
+            `;
+
+            const blob = new Blob([certificateContent], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Smart_Contract_Proof_${Date.now()}.txt`; // .txt for demo (PDF requires backend)
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        }, 2500);
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 50 }}
@@ -780,10 +843,39 @@ const Dashboard = ({ result, lang }: { result: AuditResult, lang: Language }) =>
                         </p>
                     </div>
 
-                    <button className="relative z-10 w-full py-4 bg-white hover:bg-emerald-50 text-black font-black text-lg rounded-xl flex items-center justify-center gap-3 transition-colors shadow-lg shadow-emerald-900/20">
-                        <Hash size={20} className="text-emerald-600" />
-                        {t.dashboard.claimBtn}
+                    <button
+                        onClick={handleMint}
+                        disabled={isMinting || isMinted}
+                        className={`relative z-10 w-full py-4 font-black text-lg rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg ${isMinted
+                            ? "bg-emerald-500 text-white cursor-default"
+                            : isMinting
+                                ? "bg-gray-700 text-gray-300 cursor-wait"
+                                : "bg-white hover:bg-emerald-50 text-black shadow-emerald-900/20"
+                            }`}
+                    >
+                        {isMinting ? (
+                            <>
+                                <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                Minting Proof...
+                            </>
+                        ) : isMinted ? (
+                            <>
+                                <CheckCircle size={20} />
+                                Proof Downloaded
+                            </>
+                        ) : (
+                            <>
+                                <Hash size={20} className="text-emerald-600" />
+                                {t.dashboard.claimBtn}
+                            </>
+                        )}
                     </button>
+
+                    {isMinted && (
+                        <p className="relative z-10 text-center text-xs text-emerald-500 mt-3 animate-fade-in">
+                            Certificate downloaded to your device
+                        </p>
+                    )}
                 </div>
             </div>
         </motion.div>
@@ -795,6 +887,7 @@ const Dashboard = ({ result, lang }: { result: AuditResult, lang: Language }) =>
 export default function GigGuardApp() {
     const [view, setView] = useState<"hero" | "scanner" | "dashboard">("hero");
     const [lang, setLang] = useState<Language>('en');
+    const [audioData, setAudioData] = useState<Blob | File | null>(null);
 
     return (
         <div className="min-h-screen bg-black text-white font-sans selection:bg-emerald-500/30 overflow-x-hidden">
@@ -830,7 +923,12 @@ export default function GigGuardApp() {
                                 <h2 className="text-4xl font-bold text-white mb-3 tracking-tight">{TRANSLATIONS[lang].scanner.title}</h2>
                                 <p className="text-gray-400 text-lg">{TRANSLATIONS[lang].scanner.desc}</p>
                             </div>
-                            <Scanner onScanComplete={() => setView("dashboard")} lang={lang} />
+                            <Scanner
+                                onScanComplete={() => setView("dashboard")}
+                                lang={lang}
+                                audioData={audioData}
+                                setAudioData={setAudioData}
+                            />
                         </motion.div>
                     )}
 
@@ -840,7 +938,7 @@ export default function GigGuardApp() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                         >
-                            <Dashboard result={MOCK_DATA} lang={lang} />
+                            <Dashboard result={MOCK_DATA} lang={lang} audioData={audioData} />
                         </motion.div>
                     )}
                 </AnimatePresence>
