@@ -10,6 +10,7 @@ import {
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Cell
 } from "recharts";
+import VoiceRecorder from '@/components/VoiceRecorder';
 
 // --- Types & Languages ---
 type Language = 'en' | 'hi' | 'kn';
@@ -254,7 +255,11 @@ const Navbar = ({ lang, setLang }: { lang: Language, setLang: (l: Language) => v
                     <Shield size={18} className="text-black fill-current" />
                 </div>
                 <span className="text-xl font-bold tracking-tight text-white">
-                    {lang === 'en' ? 'Gig' : ''}<span className={lang === 'en' ? "text-emerald-400" : "text-white"}>{t.brand}</span>
+                    {lang === 'en' ? (
+                        <>Gig<span className="text-emerald-400">Guard</span></>
+                    ) : (
+                        <span className="text-white">{t.brand}</span>
+                    )}
                 </span>
             </div>
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-400">
@@ -350,12 +355,27 @@ const Scanner = ({ onScanComplete, lang }: { onScanComplete: () => void, lang: L
     const t = TRANSLATIONS[lang];
     const [status, setStatus] = useState<ScanStatus>("idle");
     const [progress, setProgress] = useState(0);
+    const [audioData, setAudioData] = useState<Blob | File | null>(null);
+    const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
+            setUploadedFileName(e.target.files[0].name);
             startScan();
         }
+    };
+
+    const removeUploadedImage = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+        setUploadedFileName(null);
+        setStatus("idle");
+    };
+
+    const removeAudioData = () => {
+        setAudioData(null);
     };
 
     const startScan = () => {
@@ -374,6 +394,50 @@ const Scanner = ({ onScanComplete, lang }: { onScanComplete: () => void, lang: L
                 }, 800);
             }
         }, 30);
+    };
+
+    const handleGenerateReport = async () => {
+        if (!fileInputRef.current?.files?.[0]) {
+            alert("Please upload a screenshot first!");
+            return;
+        }
+
+        const formData = new FormData();
+
+        // 1. Append the Screenshot
+        formData.append('file', fileInputRef.current.files[0]);
+
+        // 2. Append Audio (If it exists)
+        if (audioData) {
+            // If it's a recorded Blob, it needs a filename. If it's a File, it already has one.
+            const filename = (audioData as File).name || "voice_testimony.wav";
+            formData.append('audio', audioData, filename);
+        }
+
+        try {
+            // USE THE NGROK URL HERE
+            const response = await fetch('https://YOUR-NGROK-URL.ngrok-free.app/generate-report', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) throw new Error("Analysis failed");
+
+            // 3. Download the PDF
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Evidence_Pack_${Date.now()}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+
+        } catch (error) {
+            console.error(error);
+            alert("Error generating report. Check console.");
+        }
     };
 
     return (
@@ -401,6 +465,97 @@ const Scanner = ({ onScanComplete, lang }: { onScanComplete: () => void, lang: L
                         </div>
                         <h3 className="text-2xl font-bold text-white mb-3">{t.scanner.uploadTitle}</h3>
                         <p className="text-sm text-gray-400 group-hover:text-gray-300">{t.scanner.uploadSub}</p>
+
+                        {/* Uploaded Image Info */}
+                        {uploadedFileName && (
+                            <div className="mt-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <CheckCircle size={16} className="text-emerald-400" />
+                                    <span className="text-sm text-emerald-400 font-medium">{uploadedFileName}</span>
+                                </div>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeUploadedImage();
+                                    }}
+                                    className="text-xs text-red-400 hover:text-red-300 underline"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        )}
+
+                        {/* --- AUDIO EVIDENCE SECTION --- */}
+                        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mt-6">
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                                    🎤 Verbal Testimony <span className="text-slate-500 font-normal">(Optional)</span>
+                                </label>
+
+                                {/* Status Indicator */}
+                                {audioData && (
+                                    <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded border border-emerald-500/20">
+                                        ✅ Audio Attached
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-3">
+
+                                {/* OPTION A: Live Recorder */}
+                                <VoiceRecorder onAudioReady={(blob) => setAudioData(blob)} />
+
+                                <div className="flex items-center text-slate-500 text-xs font-mono uppercase justify-center">
+                                    - OR -
+                                </div>
+
+                                {/* OPTION B: File Upload Button */}
+                                <label className="flex-1 cursor-pointer group">
+                                    <input
+                                        type="file"
+                                        accept="audio/*"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            if (e.target.files && e.target.files[0]) {
+                                                setAudioData(e.target.files[0]);
+                                            }
+                                        }}
+                                    />
+                                    <div className="flex items-center justify-center gap-2 px-4 py-2 border border-dashed border-slate-600 rounded-lg text-slate-400 hover:text-slate-200 hover:border-slate-500 hover:bg-slate-700/50 transition-all">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                            <polyline points="17 8 12 3 7 8" />
+                                            <line x1="12" y1="3" x2="12" y2="15" />
+                                        </svg>
+                                        <span className="text-sm">Upload Recording</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            {/* Audio File Info with Remove Button */}
+                            {audioData && (
+                                <div className="mt-3 p-2 bg-emerald-500/5 border border-emerald-500/20 rounded-lg flex items-center justify-between">
+                                    <span className="text-xs text-emerald-400">
+                                        {'name' in audioData ? `File: ${audioData.name}` : 'Voice recording saved'}
+                                    </span>
+                                    <button
+                                        onClick={removeAudioData}
+                                        className="text-xs text-red-400 hover:text-red-300 underline"
+                                    >
+                                        Remove
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Generate Report Button */}
+                        <button
+                            onClick={handleGenerateReport}
+                            className="mt-6 w-full px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-emerald-500/50"
+                        >
+                            Generate Evidence Report
+                        </button>
+
                         <div className="mt-8 text-xs text-gray-600 font-mono bg-black/40 rounded-full px-3 py-1 inline-block border border-white/5">
                             <Lock size={10} className="inline mr-1" /> {t.scanner.privacy}
                         </div>
